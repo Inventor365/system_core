@@ -1221,6 +1221,21 @@ static void SetSafetyNetProps() {
     }
 }
 
+static std::string GenerateFallbackDigest() {
+    std::string seed = android::base::GetProperty("ro.build.id", "unknown") + "-" +
+                       android::base::GetProperty("ro.build.version.incremental", "unknown") + "-vbmeta";
+    
+    std::string result;
+    std::hash<std::string> hasher;
+    for (int i = 0; i < 8; i++) {
+        uint32_t h = static_cast<uint32_t>(hasher(seed + std::to_string(i)));
+        char buf[9];
+        snprintf(buf, sizeof(buf), "%08x", h);
+        result += buf;
+    }
+    return result;
+}
+
 void LoadVbMetaOverrides() {
     uint32_t res;
     std::string error;
@@ -1238,6 +1253,17 @@ void LoadVbMetaOverrides() {
         } else {
             LOG(ERROR) << "GetVbmetaSize: Failed to set property 'ro.boot.vbmeta.size' to '" << vbmeta_size 
                        << "': err=" << res << " (" << error << ")";
+        }
+    }
+
+    std::string vbmeta_digest = android::base::GetProperty("ro.boot.vbmeta.digest", "");
+    if (vbmeta_digest.empty()) {
+        std::string fallback_digest = GenerateFallbackDigest();
+        res = PropertySetNoSocket("ro.boot.vbmeta.digest", fallback_digest, &error);
+        if (res == PROP_SUCCESS) {
+            LOG(INFO) << "GetVbmetaDigest: Property 'ro.boot.vbmeta.digest' set successfully to dynamic fallback value '" << fallback_digest << "'";
+        } else {
+            LOG(ERROR) << "GetVbmetaDigest: Failed to set property 'ro.boot.vbmeta.digest' to fallback value: " << error;
         }
     }
 }
