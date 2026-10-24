@@ -1201,7 +1201,6 @@ static void SetSafetyNetProps() {
         {"vendor.boot.vbmeta.device_state", "locked"},
         {"vendor.boot.verifiedbootstate", "green"},
         {"oplusboot.verifiedbootstate", "green"},
-        {"sys.oem_unlock_allowed", "0"},
         {"ro.oem_unlock_supported", "0"},
         {"ro.crypto.state", "encrypted"},
         {"ro.boot.flash.locked", "1"},
@@ -1225,29 +1224,17 @@ void LoadVbMetaOverrides() {
     uint32_t res;
     std::string error;
     std::string vbmeta_size = GetVbmetaSize();
-    
-    if (vbmeta_size.empty()) {
-        vbmeta_size = "4096";
-    }
-
-    std::string vbmeta_size_prop = android::base::GetProperty("ro.boot.vbmeta.size", "");
-    if (vbmeta_size_prop.empty()) {
+    if (!vbmeta_size.empty()) {
         res = PropertySetNoSocket("ro.boot.vbmeta.size", vbmeta_size, &error);
         if (res == PROP_SUCCESS) {
             LOG(INFO) << "GetVbmetaSize: Property 'ro.boot.vbmeta.size' set successfully to '" << vbmeta_size << "'";
         } else {
-            LOG(ERROR) << "GetVbmetaSize: Failed to set property 'ro.boot.vbmeta.size' to '" << vbmeta_size
+            LOG(ERROR) << "GetVbmetaSize: Failed to set property 'ro.boot.vbmeta.size' to '" << vbmeta_size 
                        << "': err=" << res << " (" << error << ")";
         }
+    } else {
+        LOG(INFO) << "GetVbmetaSize: Failed to get vbmeta size";
     }
-
-    // Deliberately do NOT synthesize ro.boot.vbmeta.digest. On a locked device the
-    // bootloader supplies the genuine digest on the kernel cmdline; leaving it alone
-    // lets AttestationUtils/KeyMint extract the real verified-boot hash (RootOfTrust
-    // tag 704). Writing a fake digest here poisons TEE attestation. This matches
-    // AxionAOSP and Evolution-X, whose LoadVbMetaOverrides() only sets vbmeta.size.
-    // The ro.boot.vbmeta.* write exemption (see property setter) is preserved so the
-    // framework can still set the digest dynamically once extracted.
 }
 
 void PropertyLoadBootDefaults() {
@@ -1364,8 +1351,6 @@ void PropertyLoadBootDefaults() {
         SetSafetyNetProps();
       }
     }
-
-    LoadVbMetaOverrides();
 
     // Restore the normal property override security after init extension is executed
     weaken_prop_override_security = false;
@@ -1587,6 +1572,13 @@ static void HandleInitSocket() {
                 // Always enable usb adb if device is booted with debug ramdisk.
                 update_sys_usb_config();
             }
+
+            weaken_prop_override_security = true;
+
+            LoadVbMetaOverrides();
+
+            weaken_prop_override_security = false;
+
             InitPropertySet("ro.persistent_properties.ready", "true");
             persistent_properties_loaded = true;
             break;
