@@ -1223,32 +1223,11 @@ static void SetSafetyNetProps() {
     }
 }
 
-static std::string GenerateFallbackDigest() {
-    std::string seed = android::base::GetProperty("ro.build.id", "unknown") + "-" +
-                       android::base::GetProperty("ro.build.version.incremental", "unknown") + "-vbmeta";
-    
-    std::string result;
-    std::hash<std::string> hasher;
-    for (int i = 0; i < 8; i++) {
-        uint32_t h = static_cast<uint32_t>(hasher(seed + std::to_string(i)));
-        char buf[9];
-        snprintf(buf, sizeof(buf), "%08x", h);
-        result += buf;
-    }
-    return result;
-}
-
 void LoadVbMetaOverrides() {
     uint32_t res;
     std::string error;
     std::string vbmeta_size = GetVbmetaSize();
-    
-    if (vbmeta_size.empty()) {
-        vbmeta_size = "4096";
-    }
-
-    std::string vbmeta_size_prop = android::base::GetProperty("ro.boot.vbmeta.size", "");
-    if (vbmeta_size_prop.empty()) {
+    if (!vbmeta_size.empty()) {
         res = PropertySetNoSocket("ro.boot.vbmeta.size", vbmeta_size, &error);
         if (res == PROP_SUCCESS) {
             LOG(INFO) << "GetVbmetaSize: Property 'ro.boot.vbmeta.size' set successfully to '" << vbmeta_size << "'";
@@ -1256,17 +1235,8 @@ void LoadVbMetaOverrides() {
             LOG(ERROR) << "GetVbmetaSize: Failed to set property 'ro.boot.vbmeta.size' to '" << vbmeta_size 
                        << "': err=" << res << " (" << error << ")";
         }
-    }
-
-    std::string vbmeta_digest = android::base::GetProperty("ro.boot.vbmeta.digest", "");
-    if (vbmeta_digest.empty()) {
-        std::string fallback_digest = GenerateFallbackDigest();
-        res = PropertySetNoSocket("ro.boot.vbmeta.digest", fallback_digest, &error);
-        if (res == PROP_SUCCESS) {
-            LOG(INFO) << "GetVbmetaDigest: Property 'ro.boot.vbmeta.digest' set successfully to dynamic fallback value '" << fallback_digest << "'";
-        } else {
-            LOG(ERROR) << "GetVbmetaDigest: Failed to set property 'ro.boot.vbmeta.digest' to fallback value: " << error;
-        }
+    } else {
+        LOG(INFO) << "GetVbmetaSize: Failed to get vbmeta size";
     }
 }
 
@@ -1384,8 +1354,6 @@ void PropertyLoadBootDefaults() {
         SetSafetyNetProps();
       }
     }
-
-    LoadVbMetaOverrides();
 
     // Restore the normal property override security after init extension is executed
     weaken_prop_override_security = false;
@@ -1607,6 +1575,13 @@ static void HandleInitSocket() {
                 // Always enable usb adb if device is booted with debug ramdisk.
                 update_sys_usb_config();
             }
+
+            weaken_prop_override_security = true;
+
+            LoadVbMetaOverrides();
+
+            weaken_prop_override_security = false;
+
             InitPropertySet("ro.persistent_properties.ready", "true");
             persistent_properties_loaded = true;
             break;
